@@ -1,0 +1,14 @@
+{application, erlmunk, [
+    {description, ""},
+    {vsn, "0.0.1"},
+    {registered, []},
+    {applications, [
+        %%tools,          % uncomment to enable profiling
+        kernel,
+        stdlib,
+        public_key,
+        lager
+    ]},
+    {mod, {erlmunk_app, []}},
+    {env, []}
+]}.
