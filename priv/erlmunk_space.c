@@ -18,19 +18,20 @@ typedef struct element {
 
 erlmunk_space *erlmunk_spaces = NULL;
 
-void add_space_body(erlmunk_space *s, int id, cpBody *body) {
+void space_add_body_hash(erlmunk_space *s, int id, cpBody *body) {
     erlmunk_body *b = (erlmunk_body *) malloc(sizeof(erlmunk_body));
     b->id = id;
     b->body = body;
     HASH_ADD_INT(s->bodies, id, b);
 }
 
-void remove_space_body(erlmunk_space *s, erlmunk_body *body) {
+void space_remove_body_hash(erlmunk_space *s, erlmunk_body *body) {
     HASH_DEL(s->bodies, body);
     free(body);
 }
 
 void space_add_subscriber(erlmunk_space *s,
+                          erlmunk_client *client,
                           ETERM *from,
                           float l, float b,
                           float r, float t) {
@@ -38,9 +39,23 @@ void space_add_subscriber(erlmunk_space *s,
     erlmunk_subscriber *subscriber = (erlmunk_subscriber *) malloc(sizeof(erlmunk_subscriber));
     subscriber->id = s->subscriber_count++;
     subscriber->bb = cpBBNew(l, b, r, t);
+    subscriber->client = client;
     subscriber->from = from;
 
     HASH_ADD_INT(s->subscribers, id, subscriber);
+}
+
+void space_remove_subscriber(erlmunk_space *s, erlmunk_subscriber *subscriber) {
+    HASH_DEL(s->subscribers, subscriber);
+    free(subscriber);
+}
+
+void space_remove_subscriptions(erlmunk_space *s, erlmunk_client *client) {
+    for(erlmunk_subscriber *subscriber = s->subscribers; subscriber != NULL;
+        subscriber = subscriber->hh.next) {
+        if (subscriber->client == client)
+            space_remove_subscriber(s, subscriber);
+    }
 }
 
 ETERM *space_new(ETERM *fromp, ETERM *argp) {
@@ -56,6 +71,7 @@ ETERM *space_new(ETERM *fromp, ETERM *argp) {
     cpSpaceSetIterations(space, ERL_INT_VALUE(iterationsp));
     cpSpaceSetGravity(space, cpv(ERL_FLOAT_VALUE(gravityxp),
                                  ERL_FLOAT_VALUE(gravityyp)));
+    cpSpaceSetSleepTimeThreshold(space, 5.0);
 
     // add it to the hash table
     ETERM *ref = erl_mk_node_ref();
@@ -64,6 +80,7 @@ ETERM *space_new(ETERM *fromp, ETERM *argp) {
     s->space = space;
     s->subscriber_count = 0;
     s->subscribers = NULL;
+    s->bodies = NULL;
     HASH_ADD_INT(erlmunk_spaces, id, s);
 
     ETERM *atom_ok = erl_mk_atom("ok");
@@ -71,12 +88,43 @@ ETERM *space_new(ETERM *fromp, ETERM *argp) {
     space_new_array[0] = atom_ok;
     space_new_array[1] = ref;
     ETERM *space_new_tuple = erl_mk_tuple(space_new_array, 2);
+    free(space_new_array);
 
     ETERM *reply_tuple = erl_mk_reply(fromp, space_new_tuple);
     ETERM *gen_cast_tuple = erl_mk_gen_cast(reply_tuple);
 
-    DEBUGF(("space_new has succeeded"));
     return gen_cast_tuple;
+}
+
+ETERM *space_delete(ETERM *fromp, ETERM *argp) {
+
+    // get the args
+    ETERM *space_refp = erl_element(1, argp);
+
+    erlmunk_space *s;
+    int space_id = ERL_REF_NUMBER(space_refp);
+    HASH_FIND_INT(erlmunk_spaces, &space_id, s);
+
+    // remove all subscribers
+    for(erlmunk_subscriber *subscriber = s->subscribers; subscriber != NULL;
+        subscriber = subscriber->hh.next) {
+        space_remove_subscriber(s, subscriber);
+    }
+    // remove all bodies
+    for(erlmunk_body *b = s->bodies; b != NULL;
+        b = b->hh.next) {
+        erlmunk_body_data *data = cpBodyGetUserData(b->body);
+        if (data->term != NULL)
+            erl_free_compound(data->term);
+        free(data);
+
+        cpSpaceRemoveBody(s->space, b->body);
+        cpBodyDestroy(b->body);
+        cpBodyFree(b->body);
+        space_remove_body_hash(s, b);
+    }
+
+    return NULL;
 }
 
 ETERM *space_add_body(ETERM *fromp, ETERM *argp) {
@@ -91,14 +139,144 @@ ETERM *space_add_body(ETERM *fromp, ETERM *argp) {
     int space_id = ERL_REF_NUMBER(space_refp);
     HASH_FIND_INT(erlmunk_spaces, &space_id, s);
 
+    int object_id = ERL_INT_VALUE(idp);
+
     cpBody *body = cpSpaceAddBody(s->space,
                                   cpBodyNew(ERL_FLOAT_VALUE(massp),
                                             INFINITY));
-    cpShape *shape = cpSpaceAddShape(s->space, cpCircleShapeNew(body, 5, cpvzero));
-    cpShapeSetCollisionType(shape, 1);
-    add_space_body(s, ERL_INT_VALUE(idp), body);
+    // the body is created inactive, it is explicitly activated
+    // when all it's values have been set.
+    cpBodySleep(body);
+    erlmunk_body_data *data = malloc(sizeof(erlmunk_body_data));
+    data->id = object_id;
+    data->term = NULL;
+    cpBodySetUserData(body, (cpDataPointer) data);
+    space_add_body_hash(s, object_id, body);
 
-    DEBUGF(("space_add_body has succeeded"));
+    return NULL;
+}
+
+void shapeRemove(cpBody *body, cpShape *shape, void *data) {
+    cpSpace *space = cpBodyGetSpace(body);
+    cpSpaceRemoveShape(space, shape);
+    cpShapeDestroy(shape);
+    cpShapeFree(shape);
+}
+
+ETERM *space_remove_body(ETERM *fromp, ETERM *argp) {
+
+    // get the args
+    ETERM *space_refp = erl_element(1, argp);
+    ETERM *idp = erl_element(2, argp);
+
+    erlmunk_space *s;
+    int space_id = ERL_REF_NUMBER(space_refp);
+    HASH_FIND_INT(erlmunk_spaces, &space_id, s);
+
+    int body_id = ERL_INT_VALUE(idp);
+    erlmunk_body *b = NULL;
+    HASH_FIND_INT(s->bodies, &body_id, b);
+    if (b == NULL)
+        return NULL;
+
+    // remove the user data associated with the body
+    erlmunk_body_data *data = cpBodyGetUserData(b->body);
+    if (data->term != NULL)
+        erl_free_compound(data->term);
+    free(data);
+
+    cpBodyEachShape(b->body, shapeRemove, NULL);
+    cpSpaceRemoveBody(s->space, b->body);
+
+    space_remove_body_hash(s, b);
+
+    cpBodyDestroy(b->body);
+    cpBodyFree(b->body);
+
+    return NULL;
+}
+
+static cpBool
+handle_collision(cpArbiter *arbiter, cpSpace *space, cpDataPointer user_data)
+{
+    CP_ARBITER_GET_BODIES(arbiter, b1, b2);
+    erlmunk_subscriber *subscriber = (erlmunk_subscriber *) user_data;
+
+    erlmunk_body_data *data1 = cpBodyGetUserData(b1);
+    erlmunk_body_data *data2 = cpBodyGetUserData(b2);
+
+    DEBUGF(("collision detected between %d and %d\n", data1->id, data2->id));
+
+    ETERM **data1_array = (ETERM **) malloc(sizeof(ETERM) * 2);
+    data1_array[0] = erl_mk_int(data1->id);
+    data1_array[1] = data1->term;
+    ETERM *data1_term = erl_mk_tuple(data1_array, 2);
+    free(data1_array);
+
+    ETERM **data2_array = (ETERM **) malloc(sizeof(ETERM) * 2);
+    data2_array[0] = erl_mk_int(data2->id);
+    data2_array[1] = data2->term;
+    ETERM *data2_term = erl_mk_tuple(data2_array, 2);
+    free(data2_array);
+
+    ETERM *a = erl_mk_atom("erlmunk_collision");
+    ETERM **data_array = (ETERM **) malloc(sizeof(ETERM) * 3);
+    data_array[0] = a;
+    data_array[1] = data1_term;
+    data_array[2] = data2_term;
+    ETERM *data = erl_mk_tuple(data_array, 3);
+    free(data_array);
+
+    ETERM *gen_cast = erl_mk_gen_cast(data);
+
+    if (erl_send(subscriber->client->fd, subscriber->from, gen_cast) != 1) {
+        DEBUGF(("failed to send data to subscriber"));
+    }
+
+    return cpFalse;
+}
+
+ETERM *space_subscribe_collision(ETERM *fromp, ETERM *argp) {
+
+    // get the args
+    ETERM *space_refp = erl_element(1, argp);
+    ETERM *typeap = erl_element(2, argp);
+    ETERM *typebp = erl_element(3, argp);
+    ETERM *pidp = erl_element(4, argp);
+
+    erlmunk_space *s;
+    int space_id = ERL_REF_NUMBER(space_refp);
+    HASH_FIND_INT(erlmunk_spaces, &space_id, s);
+
+    erlmunk_subscriber *subscriber = (erlmunk_subscriber *) malloc(sizeof(erlmunk_subscriber));
+    subscriber->client = get_current_client();
+    subscriber->from = erl_copy_term(pidp);
+
+    cpCollisionHandler *handler = cpSpaceAddCollisionHandler(s->space,
+                                                             ERL_INT_VALUE(typeap),
+                                                             ERL_INT_VALUE(typebp));
+    handler->beginFunc = handle_collision;
+    handler->userData = subscriber;
+
+    return NULL;
+}
+
+ETERM *body_activate(ETERM *fromp, ETERM *argp) {
+
+    // get the args
+    ETERM *space_refp = erl_element(1, argp);
+    ETERM *idp = erl_element(2, argp);
+
+    erlmunk_space *s;
+    int space_id = ERL_REF_NUMBER(space_refp);
+    HASH_FIND_INT(erlmunk_spaces, &space_id, s);
+
+    int body_id = ERL_INT_VALUE(idp);
+    erlmunk_body *b;
+    HASH_FIND_INT(s->bodies, &body_id, b);
+
+    cpBodyActivate(b->body);
+
     return NULL;
 }
 
@@ -122,8 +300,36 @@ ETERM *body_set_position(ETERM *fromp, ETERM *argp) {
     cpBodySetPosition(b->body, cpv(ERL_FLOAT_VALUE(xp),
                                    ERL_FLOAT_VALUE(yp)));
 
-    DEBUGF(("body_set_position(x: %f, y: %f) has succeeded",
-        ERL_FLOAT_VALUE(xp), ERL_FLOAT_VALUE(yp)));
+    // DEBUGF(("body_set_position(x: %f, y: %f) has succeeded",
+    //     ERL_FLOAT_VALUE(xp), ERL_FLOAT_VALUE(yp)));
+    return NULL;
+}
+
+ETERM *body_update_position(ETERM *fromp, ETERM *argp) {
+
+    // get the args
+    ETERM *space_refp = erl_element(1, argp);
+    ETERM *idp = erl_element(2, argp);
+    ETERM *deltap = erl_element(3, argp);
+
+    erlmunk_space *s = NULL;
+    int space_id = ERL_REF_NUMBER(space_refp);
+    HASH_FIND_INT(erlmunk_spaces, &space_id, s);
+
+    int body_id = ERL_INT_VALUE(idp);
+    erlmunk_body *b = NULL;
+    HASH_FIND_INT(s->bodies, &body_id, b);
+
+    cpVect position = cpBodyGetPosition(b->body);
+    float angle = deg_to_rad(cpBodyGetAngle(b->body));
+    cpVect angleV = cpvforangle(angle);
+    cpVect projection = cpvmult(angleV, ERL_FLOAT_VALUE(deltap));
+    cpVect new_position = cpvadd(projection, position);
+    cpBodySetPosition(b->body, new_position);
+
+    // DEBUGF(("body_update_position(x: %f, y: %f, delta: %f) has succeeded (x: %f, y: %f)",
+    //     position.x, position.y, ERL_FLOAT_VALUE(deltap),
+    //     new_position.x, new_position.y));
     return NULL;
 }
 
@@ -143,7 +349,187 @@ ETERM *body_set_angle(ETERM *fromp, ETERM *argp) {
 
     cpBodySetAngle(b->body, ERL_FLOAT_VALUE(anglep));
 
-    DEBUGF(("body_set_angle(%f) has succeeded", ERL_FLOAT_VALUE(anglep)));
+    // DEBUGF(("body_set_angle(%f) has succeeded", ERL_FLOAT_VALUE(anglep)));
+    return NULL;
+}
+
+ETERM *body_set_angular_velocity(ETERM *fromp, ETERM *argp) {
+
+    // get the args
+    ETERM *space_refp = erl_element(1, argp);
+    ETERM *idp = erl_element(2, argp);
+    ETERM *angular_vel = erl_element(3, argp);
+
+    erlmunk_space *s;
+    int space_id = ERL_REF_NUMBER(space_refp);
+    HASH_FIND_INT(erlmunk_spaces, &space_id, s);
+
+    int body_id = ERL_INT_VALUE(idp);
+    erlmunk_body *b;
+    HASH_FIND_INT(s->bodies, &body_id, b);
+
+    cpBodySetAngularVelocity(b->body, ERL_FLOAT_VALUE(angular_vel));
+
+    // DEBUGF(("body_set_angular_velocity(%f) has succeeded",
+    //     ERL_FLOAT_VALUE(angular_vel)));
+    return NULL;
+}
+
+ETERM *body_set_collision_circle(ETERM *fromp, ETERM *argp) {
+
+    // get the args
+    ETERM *space_refp = erl_element(1, argp);
+    ETERM *idp = erl_element(2, argp);
+    ETERM *radiusp = erl_element(3, argp);
+    ETERM *collision_typep = erl_element(4, argp);
+
+    erlmunk_space *s;
+    int space_id = ERL_REF_NUMBER(space_refp);
+    HASH_FIND_INT(erlmunk_spaces, &space_id, s);
+
+    int body_id = ERL_INT_VALUE(idp);
+    erlmunk_body *b;
+    HASH_FIND_INT(s->bodies, &body_id, b);
+
+    cpShape *shape = cpSpaceAddShape(s->space,
+                                     cpCircleShapeNew(b->body, ERL_FLOAT_VALUE(radiusp),
+                                                      cpvzero));
+    cpShapeSetCollisionType(shape, ERL_INT_VALUE(collision_typep));
+
+    // DEBUGF(("body_set_collision_circle has succeeded"));
+    return NULL;
+}
+
+ETERM *body_get_data(ETERM *fromp, ETERM *argp) {
+
+    // get the args
+    ETERM *space_refp = erl_element(1, argp);
+    ETERM *idp = erl_element(2, argp);
+
+    erlmunk_space *s;
+    int space_id = ERL_REF_NUMBER(space_refp);
+    HASH_FIND_INT(erlmunk_spaces, &space_id, s);
+
+    int body_id = ERL_INT_VALUE(idp);
+    erlmunk_body *b;
+    HASH_FIND_INT(s->bodies, &body_id, b);
+
+    erlmunk_body_data *data = cpBodyGetUserData(b->body);
+    ETERM *datap = erl_copy_term(data->term);
+
+    ETERM *atom_ok = erl_mk_atom("ok");
+    ETERM **body_get_data_array = (ETERM **) malloc(sizeof(ETERM*) * 2);
+    body_get_data_array[0] = atom_ok;
+    body_get_data_array[1] = datap;
+    ETERM *body_get_data_tuple = erl_mk_tuple(body_get_data_array, 2);
+
+    ETERM *reply_tuple = erl_mk_reply(fromp, body_get_data_tuple);
+    ETERM *gen_cast_tuple = erl_mk_gen_cast(reply_tuple);
+
+    return gen_cast_tuple;
+}
+
+ETERM *body_set_data(ETERM *fromp, ETERM *argp) {
+
+    // get the args
+    ETERM *space_refp = erl_element(1, argp);
+    ETERM *idp = erl_element(2, argp);
+    ETERM *datap = erl_element(3, argp);
+
+    erlmunk_space *s;
+    int space_id = ERL_REF_NUMBER(space_refp);
+    HASH_FIND_INT(erlmunk_spaces, &space_id, s);
+
+    int body_id = ERL_INT_VALUE(idp);
+    erlmunk_body *b;
+    HASH_FIND_INT(s->bodies, &body_id, b);
+
+    erlmunk_body_data *data = cpBodyGetUserData(b->body);
+    data->term = erl_copy_term(datap);
+    cpBodySetUserData(b->body, (cpDataPointer) data);
+
+    return NULL;
+}
+
+ETERM *body_update_user_data(ETERM *fromp, ETERM *argp) {
+
+    DEBUGF(("body_update_user_data\n"));
+
+    // get the args
+    ETERM *space_refp = erl_element(1, argp);
+    ETERM *idp = erl_element(2, argp);
+    ETERM *keyp = erl_element(3, argp);
+    ETERM *valuep = erl_element(4, argp);
+
+    erlmunk_space *s;
+    int space_id = ERL_REF_NUMBER(space_refp);
+    HASH_FIND_INT(erlmunk_spaces, &space_id, s);
+
+    int body_id = ERL_INT_VALUE(idp);
+    erlmunk_body *b;
+    HASH_FIND_INT(s->bodies, &body_id, b);
+
+    erlmunk_body_data *data = cpBodyGetUserData(b->body);
+
+    ETERM *new_data_term = erl_lists_keyreplace(data->term, keyp, valuep);
+    erl_free_compound(data->term);
+
+    data->term = new_data_term;
+
+    return NULL;
+}
+
+ETERM *body_apply_impulse(ETERM *fromp, ETERM *argp) {
+
+    // get the args
+    ETERM *space_refp = erl_element(1, argp);
+    ETERM *idp = erl_element(2, argp);
+    ETERM *impulsep = erl_element(3, argp);
+
+    erlmunk_space *s;
+    int space_id = ERL_REF_NUMBER(space_refp);
+    HASH_FIND_INT(erlmunk_spaces, &space_id, s);
+
+    int body_id = ERL_INT_VALUE(idp);
+    erlmunk_body *b;
+    HASH_FIND_INT(s->bodies, &body_id, b);
+
+    // apply the impulse at the center of the body and along it's current angle
+    float angle = deg_to_rad(cpBodyGetAngle(b->body));
+    cpVect angleV = cpvforangle(angle);
+    cpVect impulse = cpvmult(angleV, ERL_FLOAT_VALUE(impulsep));
+    cpBodyApplyImpulseAtWorldPoint(b->body, impulse, angleV);
+
+    return NULL;
+}
+
+ETERM *body_copy(ETERM *fromp, ETERM *argp) {
+
+    // get the args
+    ETERM *space_refp = erl_element(1, argp);
+    ETERM *idp = erl_element(2, argp);
+    ETERM *from_idp = erl_element(3, argp);
+
+    erlmunk_space *s;
+    int space_id = ERL_REF_NUMBER(space_refp);
+    HASH_FIND_INT(erlmunk_spaces, &space_id, s);
+
+    int body_id = ERL_INT_VALUE(idp);
+    erlmunk_body *b;
+    HASH_FIND_INT(s->bodies, &body_id, b);
+
+    int from_body_id = ERL_INT_VALUE(from_idp);
+    erlmunk_body *from_b;
+    HASH_FIND_INT(s->bodies, &from_body_id, from_b);
+
+    // DEBUGF(("copying location from body #%d(%p) to #%d(%p)",
+    //     from_body_id, from_b, body_id, b));
+
+    // copy position and angle from the from body
+    cpBodySetPosition(b->body, cpBodyGetPosition(from_b->body));
+    cpBodySetAngle(b->body, cpBodyGetAngle(from_b->body));
+    cpBodySetVelocity(b->body, cpBodyGetVelocity(from_b->body));
+
     return NULL;
 }
 
@@ -161,22 +547,75 @@ ETERM *space_subscribe_box(ETERM *fromp, ETERM *argp) {
     int space_id = ERL_REF_NUMBER(space_refp);
     HASH_FIND_INT(erlmunk_spaces, &space_id, s);
 
-    space_add_subscriber(s, subscriber_pidp,
+    erlmunk_client *client = get_current_client();
+    space_add_subscriber(s,
+                         client, erl_copy_term(subscriber_pidp),
                          ERL_FLOAT_VALUE(leftp), ERL_FLOAT_VALUE(bottomp),
                          ERL_FLOAT_VALUE(rightp), ERL_FLOAT_VALUE(topp));
 
-    DEBUGF(("space_subscribe_box has succeeded"));
+    // DEBUGF(("space_subscribe_box(client fd: %d) has succeeded",
+    //     client->fd));
     return NULL;
 }
 
 void handle_shape(cpShape *shape, void *data) {
 
-    element *l = (element *) data;
+    element **l = (element **) data;
     cpBody *body = cpShapeGetBody(shape);
-    DEBUGF(("body: %p\n", body));
     element *el = (element *) malloc(sizeof(element));
     el->body = body;
-    LL_APPEND(l, el);
+    LL_APPEND(*l, el);
+}
+
+void handle_subscriber(erlmunk_subscriber *subscriber, element *bodies) {
+
+    element *el;
+
+    int count = 0;
+    LL_COUNT(bodies, el, count);
+    // DEBUGF(("# bodies in subscriber bounding box: %d", count));
+
+    ETERM **l_array = (ETERM **) malloc(sizeof(ETERM) * count);
+
+    int nth_body = 0;
+    LL_FOREACH(bodies, el) {
+        cpVect vect = cpBodyGetPosition(el->body);
+        float angle = cpBodyGetAngle(el->body);
+        // cpVect vel = cpBodyGetVelocity(el->body);
+        erlmunk_body_data *data = (erlmunk_body_data *) cpBodyGetUserData(el->body);
+        // DEBUGF(("id: %d, x: %f, y: %f, angle: %f, vel.x: %f, vel.y: %f, data: %p",
+        //     data->id, vect.x, vect.y, angle, vel.x, vel.y, data));
+
+        ETERM **t_array = (ETERM **) malloc(sizeof(ETERM) * 4);
+        t_array[0] = erl_mk_float(vect.x);
+        t_array[1] = erl_mk_float(vect.y);
+        t_array[2] = erl_mk_float(angle);
+        if (data->term == NULL)
+            t_array[3] = erl_mk_atom("undefined");
+        else
+            t_array[3] = erl_copy_term(data->term);
+        ETERM *tuple = erl_mk_tuple(t_array, 4);
+        free(t_array);
+
+        ETERM *prop_value = erl_mk_int_prop_value(data->id, tuple);
+        l_array[nth_body++] = prop_value;
+    }
+
+    ETERM *a = erl_mk_atom("erlmunk_update");
+    ETERM *l = erl_mk_list(l_array, count);
+    free(l_array);
+    ETERM **data_array = (ETERM **) malloc(sizeof(ETERM) * 2);
+    data_array[0] = a;
+    data_array[1] = l;
+    ETERM *data = erl_mk_tuple(data_array, 2);
+    free(data_array);
+    ETERM *gen_cast = erl_mk_gen_cast(data);
+
+    if (erl_send(subscriber->client->fd, subscriber->from, gen_cast) != 1) {
+        DEBUGF(("failed to send data to subscriber"));
+    }
+
+    erl_free_compound(gen_cast);
 }
 
 void handle_space_subscribers(erlmunk_space *s) {
@@ -188,16 +627,14 @@ void handle_space_subscribers(erlmunk_space *s) {
         element *bodies_in_bb = NULL, *el, *tmp;
         cpSpaceBBQuery(s->space, subscriber->bb,
                        CP_SHAPE_FILTER_ALL,
-                       handle_shape, bodies_in_bb);
+                       handle_shape, &bodies_in_bb);
 
-        LL_FOREACH(bodies_in_bb, el) {
-            cpVect vect = cpBodyGetPosition(el->body);
-            DEBUGF(("x: %f, y: %f\n", vect.x, vect.y));
-        }
+        handle_subscriber(subscriber, bodies_in_bb);
 
         /* now delete each element, use the safe iterator */
         LL_FOREACH_SAFE(bodies_in_bb, el, tmp) {
             LL_DELETE(bodies_in_bb, el);
+            free(el);
         }
     }
 }
@@ -208,5 +645,12 @@ void spacesStep(float dt) {
         cpSpaceStep(s->space, (1.0 / FRAMES_PER_SECOND));
 
         handle_space_subscribers(s);
+    }
+}
+
+void spacesRemoveSubscriber(erlmunk_client *client) {
+
+    for(erlmunk_space *s = erlmunk_spaces; s != NULL; s = s->hh.next) {
+        space_remove_subscriptions(s, client);
     }
 }

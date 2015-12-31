@@ -9,22 +9,19 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <poll.h>
+#include <sys/timeb.h>
 
 #include "erl_interface.h"
 #include "ei.h"
 
 #include "uthash.h"
 
+#include "chipmunk/chipmunk.h"
+
 #include "erlmunk_util.h"
 #include "erlmunk_space.h"
 
 #define BUFSIZE 2048
-
-typedef struct {
-    int fd;
-    ErlConnect *conn;
-    UT_hash_handle hh; /* makes this structure hashable */
-} erlmunk_client;
 
 typedef ETERM* (*erlmunk_command_fptr_)(ETERM *, ETERM *);
 typedef struct {
@@ -43,9 +40,22 @@ static void init_commands() {
     erlmunk_command commands[] = {
         { .name = "init", .command = init },
         { .name = "space_new", .command = space_new },
+        { .name = "space_delete", .command = space_delete },
         { .name = "space_add_body", .command = space_add_body },
+        { .name = "space_remove_body", .command = space_remove_body },
+        { .name = "space_subscribe_collision", .command = space_subscribe_collision },
+        { .name = "body_activate", .command = body_activate },
         { .name = "body_set_position", .command = body_set_position },
+        { .name = "body_update_position", .command = body_update_position },
         { .name = "body_set_angle", .command = body_set_angle },
+        { .name = "body_set_angle", .command = body_set_angle },
+        { .name = "body_set_angular_velocity", .command = body_set_angular_velocity },
+        { .name = "body_get_data", .command = body_set_data },
+        { .name = "body_set_data", .command = body_set_data },
+        { .name = "body_update_user_data", .command = body_update_user_data },
+        { .name = "body_apply_impulse", .command = body_apply_impulse },
+        { .name = "body_copy", .command = body_copy },
+        { .name = "body_set_collision_circle", .command = body_set_collision_circle },
         { .name = "space_subscribe_box", .command = space_subscribe_box },
         { .name = "", .command = NULL }
     };
@@ -78,7 +88,6 @@ static ETERM *command(ETERM *command, ETERM *fromp, ETERM *argp)
     char *command_str = NULL;
 
     command_str = ERL_ATOM_PTR(command);
-    DEBUGF(("command: %s", command_str));
     resp = run_command(command_str, fromp, argp);
 
     return resp;
@@ -114,7 +123,9 @@ void add_erlmunk_client(int fd, ErlConnect *conn) {
 }
 
 void remove_erlmunk_client(erlmunk_client *client) {
+    spacesRemoveSubscriber(client);
     HASH_DEL(erlmunk_clients, client);
+    free(client->conn);
     free(client);
 }
 
@@ -182,6 +193,8 @@ void handle_message(erlmunk_client *client) {
         return;
     }
 
+    set_current_client(client);
+
     /* {cast, {Command, Args}} | {call, From, {Command, Args}} */
     char *message_type = ERL_ATOM_PTR(erl_element(1, emsg.msg));
 
@@ -192,7 +205,7 @@ void handle_message(erlmunk_client *client) {
         ETERM *from = erl_element(2, emsg.msg);
         ETERM *message = erl_element(3, emsg.msg);
         ETERM *resp = handle_call(from, message);
-        if (erl_send(client->fd, emsg.from, resp) == 0) {
+        if (erl_send(client->fd, emsg.from, resp) != 1) {
             DEBUGF(("failed to send reply to client %d\n", client->fd));
         }
         erl_free_compound(resp);
@@ -206,6 +219,7 @@ void handle_clients(int listen_fd, struct pollfd *fds, int nfds, int n_set_fds, 
 
     int n_checked_fds = 0;
     for(int i = 0; i < nfds; i++) {
+        // only care about data coming in
         if (!fds[i].revents & POLLIN)
             continue;
 
@@ -260,7 +274,7 @@ int main(int argc, char **argv) {
     strcat(full_node_name, "@");
     strcat(full_node_name, node_host);
 
-    addr.s_addr = inet_addr("127.0.0.1");
+    addr.s_addr = inet_addr("0.0.0.0");
     if (ei_connect_xinit(&ec,
                          node_host, node_name,
                          full_node_name,
@@ -282,12 +296,29 @@ int main(int argc, char **argv) {
     while (1) {
         int timeout = 1000 / FRAMES_PER_SECOND;
         int nfds;
+        struct timeb start, end;
+
+        // get the time when we started waiting
+        ftime(&start);
 
         struct pollfd *fds = get_clients_to_poll(listen_fd, &nfds);
         int n_set_fds = poll(fds, nfds, timeout);
 
-        if (n_set_fds != 0)
+        if (n_set_fds != 0) {
             handle_clients(listen_fd, fds, nfds, n_set_fds, &ec);
+
+            // and the time when we finished handling the client requests
+            ftime(&end);
+            // diff is in millis
+            int diff = (int) (1000.0 * (end.time - start.time) + (end.millitm - start.millitm));
+            // we're interested in constant time steps, so wait out the remainder of the delta t
+            // if any exists
+            if (diff < timeout) {
+                // DEBUGF(("sleeping the remainder of the cycle: %d (%d - %d)",
+                //     timeout - diff, timeout, diff));
+                poll(NULL, 0, timeout - diff);
+            }
+        }
 
         spacesStep(1.0 / FRAMES_PER_SECOND);
     }

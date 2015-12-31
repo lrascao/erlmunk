@@ -1,0 +1,5 @@
+.rebar/
+deps/
+ebin/
+priv/*.o
+priv/erlmunk_cnode

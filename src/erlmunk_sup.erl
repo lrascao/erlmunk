@@ -5,8 +5,6 @@
 %% API
 -export([start_link/0]).
 
--export([start_child/0]).
-
 %% Supervisor callbacks
 -export([init/1]).
 
@@ -21,14 +19,13 @@
 start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
-start_child() ->
-    supervisor:start_child(?MODULE, []).
-
 %% ===================================================================
 %% Supervisor callbacks
 %% ===================================================================
 
 init([]) ->
-    {ok, {{simple_one_for_one, 60, 3600}, [
-        ?CHILD(erlmunk, worker, temporary)
-    ]}}.
+    PoolSpec = poolboy:child_spec(erlmunk,
+                                  [{name, {local, erlmunk}},
+                                   {worker_module, erlmunk},
+                                   {size, 1}], []),
+    {ok, {{one_for_one, 10, 10}, [PoolSpec]}}.

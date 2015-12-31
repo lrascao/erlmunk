@@ -7,9 +7,22 @@
 #include "erl_interface.h"
 #include "ei.h"
 
+#include "uthash.h"
+
+#include "erlmunk_util.h"
+
 extern char *node_name;
 unsigned int ref_count = 0;
 unsigned char creation = 'c';
+erlmunk_client *current_client = NULL;
+
+void set_current_client(erlmunk_client *client) {
+    current_client = client;
+}
+
+erlmunk_client * get_current_client() {
+    return current_client;
+}
 
 int tcp_listen(int *port) {
     int fd;
@@ -63,6 +76,7 @@ ETERM *erl_mk_gen_cast(ETERM *arg) {
     gen_cast_tuple_array[0] = gen_cast_atom;
     gen_cast_tuple_array[1] = arg;
     ETERM *gen_cast_tuple = erl_mk_tuple(gen_cast_tuple_array, 2);
+    free(gen_cast_tuple_array);
     return gen_cast_tuple;
 }
 
@@ -82,5 +96,65 @@ ETERM *erl_mk_reply(ETERM *fromp, ETERM *reply) {
     reply_array[1] = fromp;
     reply_array[2] = reply;
     ETERM *reply_tuple = erl_mk_tuple(reply_array, 3);
+    free(reply_array);
     return reply_tuple;
+}
+
+ETERM *erl_mk_int_prop_value(int id, ETERM *value) {
+
+    ETERM *key_term = erl_mk_int(id);
+    ETERM **tuple_array = (ETERM **) malloc(sizeof(ETERM*) * 2);
+    tuple_array[0] = key_term;
+    tuple_array[1] = value;
+    ETERM *t = erl_mk_tuple(tuple_array, 2);
+    free(tuple_array);
+    return t;
+}
+
+ETERM *update_prop_value(ETERM *old_value, ETERM *new_value) {
+    if (ERL_IS_INTEGER(old_value)) {
+        int delta = ERL_INT_VALUE(new_value);
+        return erl_mk_int(ERL_INT_VALUE(old_value) + delta);
+    }
+
+    return erl_copy_term(new_value);
+}
+
+ETERM *erl_lists_keyreplace(ETERM *list, ETERM *key, ETERM *value) {
+
+    int length = erl_length(list);
+    ETERM **new_list_array = (ETERM **) malloc(sizeof(ETERM*) * length);
+    int i = 0;
+    do {
+        ETERM *hd = erl_hd(list);
+        ETERM *k = erl_element(1, hd);
+        ETERM *v = erl_element(2, hd);
+
+        ETERM **new_prop_tuple_array = (ETERM **) malloc(sizeof(ETERM*) * 2);
+        if (strcmp(ERL_ATOM_PTR(k), ERL_ATOM_PTR(key)) == 0) {
+            // found our match
+            new_prop_tuple_array[0] = erl_copy_term(key);
+            new_prop_tuple_array[1] = update_prop_value(v, value);
+        } else {
+            // make a new copy of the current values
+            new_prop_tuple_array[0] = erl_copy_term(k);
+            new_prop_tuple_array[1] = erl_copy_term(v);
+        }
+        ETERM *new_prop_tuple = erl_mk_tuple(new_prop_tuple_array, 2);
+        free(new_prop_tuple_array);
+        new_list_array[i] = new_prop_tuple;
+        i++;
+        list = erl_tl(list);
+    } while (i < length);
+
+    free(new_list_array);
+    return erl_mk_list(new_list_array, length);
+}
+
+float deg_to_rad(float d) {
+    return d * RADIAN;
+}
+
+float rad_to_deg(float r) {
+    return r / RADIAN;
 }
