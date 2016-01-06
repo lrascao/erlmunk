@@ -147,8 +147,9 @@ ETERM *erl_lists_keyreplace(ETERM *list, ETERM *key, ETERM *value) {
         list = erl_tl(list);
     } while (i < length);
 
+    ETERM *l = erl_mk_list(new_list_array, length);
     free(new_list_array);
-    return erl_mk_list(new_list_array, length);
+    return l;
 }
 
 float deg_to_rad(float d) {
