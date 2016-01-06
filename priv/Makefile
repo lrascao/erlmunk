@@ -13,8 +13,8 @@ CFLAGS = -c -Wall -g
 
 # define any directories containing header files other than /usr/include
 #
-UTHASH_ROOT=../deps/uthash
-CHIPMUNK_ROOT=../deps/chipmunk2d
+UTHASH_ROOT=../../uthash
+CHIPMUNK_ROOT=../../chipmunk2d
 INCLUDES = -I${ERL_TOP}/usr/include -I${ERL_TOP}/lib/erl_interface-3.7.20/include -I$(UTHASH_ROOT)/src -I$(CHIPMUNK_ROOT)/include
 
 # define library paths in addition to /usr/lib

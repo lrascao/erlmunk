@@ -43,7 +43,6 @@ deps:
 
 compile:
 	- $(REBAR) skip_deps=true compile
-	pushd priv; make; popd
 
 $(DEPS_PLT):
 	@echo Building $(DEPS_PLT)
