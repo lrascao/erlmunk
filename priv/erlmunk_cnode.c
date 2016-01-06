@@ -295,6 +295,7 @@ int main(int argc, char **argv) {
 
     init_commands();
 
+    int diff = 0;
     while (1) {
         int timeout = 1000 / FRAMES_PER_SECOND;
         int nfds;
@@ -308,21 +309,18 @@ int main(int argc, char **argv) {
 
         if (n_set_fds != 0) {
             handle_clients(listen_fd, fds, nfds, n_set_fds, &ec);
-
-            // and the time when we finished handling the client requests
-            ftime(&end);
-            // diff is in millis
-            int diff = (int) (1000.0 * (end.time - start.time) + (end.millitm - start.millitm));
-            // we're interested in constant time steps, so wait out the remainder of the delta t
-            // if any exists
-            if (diff < timeout) {
-                // DEBUGF(("sleeping the remainder of the cycle: %d (%d - %d)",
-                //     timeout - diff, timeout, diff));
-                poll(NULL, 0, timeout - diff);
-            }
         }
 
-        spacesStep(1.0 / FRAMES_PER_SECOND);
+        // and the time when we finished handling the client requests
+        ftime(&end);
+        // diff is in millis
+        diff += (int) (1000.0 * (end.time - start.time) + (end.millitm - start.millitm));
+
+        // is it already time to step the spaces?
+        if (diff >= timeout) {
+            spacesStep(1.0 / FRAMES_PER_SECOND);
+            diff = 0;
+        }
     }
     return 0;
 }
