@@ -205,7 +205,7 @@ handle_collision(cpArbiter *arbiter, cpSpace *space, cpDataPointer user_data)
     erlmunk_body_data *data1 = cpBodyGetUserData(b1);
     erlmunk_body_data *data2 = cpBodyGetUserData(b2);
 
-    DEBUGF(("collision detected between %d and %d\n", data1->id, data2->id));
+    // DEBUGF(("collision detected between %d and %d\n", data1->id, data2->id));
 
     ETERM **data1_array = (ETERM **) malloc(sizeof(ETERM) * 2);
     data1_array[0] = erl_mk_int(data1->id);
@@ -544,7 +544,7 @@ ETERM *body_set_data(ETERM *fromp, ETERM *argp) {
 
 ETERM *body_update_user_data(ETERM *fromp, ETERM *argp) {
 
-    DEBUGF(("body_update_user_data\n"));
+    // DEBUGF(("body_update_user_data\n"));
 
     // get the args
     ETERM *space_refp = erl_element(1, argp);
