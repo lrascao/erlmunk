@@ -6,7 +6,8 @@
          add_body/5,
          remove_body/3,
          subscribe_collision/5,
-         subscribe_box/4]).
+         subscribe_box/4,
+         add_boundaries/8]).
 
 new(Iterations, {GravityX, GravityY} = Gravity)
         when is_integer(Iterations),
@@ -42,3 +43,21 @@ subscribe_box(Pid, SpaceRef, SubscriberPid, {Left, Bottom, Right, Top} = Boundin
              is_float(Right),
              is_float(Top) ->
     gen_server:cast(Pid, {space_subscribe_box, {SpaceRef, SubscriberPid, BoundingBox}}).
+
+add_boundaries(Pid, SpaceRef, {LLX, LLY} = LowerLeft,
+                              {LRX, LRY} = LowerRight,
+                              {ULX, ULY} = UpperLeft,
+                              {URX, URY} = UpperRight,
+               CollisionCategory,
+               Data)
+        when is_pid(Pid),
+             is_float(LLX), is_float(LLY),
+             is_float(LRX), is_float(LRY),
+             is_float(ULX), is_float(ULY),
+             is_float(URX), is_float(URY),
+             is_integer(CollisionCategory) ->
+    gen_server:cast(Pid, {space_add_boundaries,
+                            {SpaceRef, LowerLeft, LowerRight,
+                                       UpperLeft, UpperRight,
+                             CollisionCategory,
+                             Data}}).

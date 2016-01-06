@@ -2,6 +2,7 @@
 -module(erlmunk_body).
 
 -export([activate/3,
+         get_position/3,
          set_position/4,
          update_position/4,
          set_angle/4,
@@ -16,6 +17,11 @@
 activate(Pid, SpaceRef, BodyId)
         when is_integer(BodyId) ->
     gen_server:cast(Pid, {body_activate, {SpaceRef, BodyId}}).
+
+get_position(Pid, SpaceRef, BodyId)
+        when is_integer(BodyId) ->
+    {ok, {_x, _y} = Position, Angle} = gen_server:call(Pid, {body_get_position, {SpaceRef, BodyId}}),
+    {ok, Position, Angle}.
 
 set_position(Pid, SpaceRef, BodyId, {X, Y} = Vector)
         when is_integer(BodyId),

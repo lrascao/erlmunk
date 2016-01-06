@@ -261,6 +261,57 @@ ETERM *space_subscribe_collision(ETERM *fromp, ETERM *argp) {
     return NULL;
 }
 
+ETERM *space_add_boundaries(ETERM *fromp, ETERM *argp) {
+
+    // get the args
+    ETERM *space_refp = erl_element(1, argp);
+    ETERM *lower_leftp = erl_element(2, argp);
+    ETERM *lower_rightp = erl_element(3, argp);
+    ETERM *upper_leftp = erl_element(4, argp);
+    ETERM *upper_rightp = erl_element(5, argp);
+    ETERM *collision_categoryp = erl_element(6, argp);
+    ETERM *datap = erl_element(7, argp);
+
+    erlmunk_space *s;
+    int space_id = ERL_REF_NUMBER(space_refp);
+    HASH_FIND_INT(erlmunk_spaces, &space_id, s);
+
+    cpVect lowerLeft = cpv(ERL_FLOAT_VALUE(erl_element(1, lower_leftp)),
+                           ERL_FLOAT_VALUE(erl_element(2, lower_leftp)));
+    cpVect lowerRight = cpv(ERL_FLOAT_VALUE(erl_element(1, lower_rightp)),
+                            ERL_FLOAT_VALUE(erl_element(2, lower_rightp)));
+    cpVect upperLeft = cpv(ERL_FLOAT_VALUE(erl_element(1, upper_leftp)),
+                           ERL_FLOAT_VALUE(erl_element(2, upper_leftp)));
+    cpVect upperRight = cpv(ERL_FLOAT_VALUE(erl_element(1, upper_rightp)),
+                            ERL_FLOAT_VALUE(erl_element(2, upper_rightp)));
+
+    // get the static body that comes with the space
+    cpBody *static_body = cpSpaceGetStaticBody(s->space);
+    erlmunk_body_data *data = malloc(sizeof(erlmunk_body_data));
+    data->id = BOUNDARY_BODY_ID;
+    data->term = erl_copy_term(datap);
+    cpBodySetUserData(static_body, (cpDataPointer) data);
+
+    // bottom
+    cpShape *bottomBoundaryShape = cpSegmentShapeNew(static_body, lowerLeft, lowerRight, 0.0f);
+    cpShapeSetCollisionType(bottomBoundaryShape, ERL_INT_VALUE(collision_categoryp));
+    cpSpaceAddShape(s->space, bottomBoundaryShape);
+    // top
+    cpShape *topBoundaryShape = cpSegmentShapeNew(static_body, upperLeft, upperRight, 0.0f);
+    cpShapeSetCollisionType(topBoundaryShape, ERL_INT_VALUE(collision_categoryp));
+    cpSpaceAddShape(s->space, topBoundaryShape);
+    // left
+    cpShape *leftBoundaryShape = cpSegmentShapeNew(static_body, lowerLeft, upperLeft, 0.0f);
+    cpShapeSetCollisionType(leftBoundaryShape, ERL_INT_VALUE(collision_categoryp));
+    cpSpaceAddShape(s->space, leftBoundaryShape);
+    // right
+    cpShape *rightBoundaryShape = cpSegmentShapeNew(static_body, lowerRight, upperRight, 0.0f);
+    cpShapeSetCollisionType(rightBoundaryShape, ERL_INT_VALUE(collision_categoryp));
+    cpSpaceAddShape(s->space, rightBoundaryShape);
+
+    return NULL;
+}
+
 ETERM *body_activate(ETERM *fromp, ETERM *argp) {
 
     // get the args
@@ -278,6 +329,46 @@ ETERM *body_activate(ETERM *fromp, ETERM *argp) {
     cpBodyActivate(b->body);
 
     return NULL;
+}
+
+ETERM *body_get_position(ETERM *fromp, ETERM *argp) {
+
+    // get the args
+    ETERM *space_refp = erl_element(1, argp);
+    ETERM *idp = erl_element(2, argp);
+
+    erlmunk_space *s = NULL;
+    int space_id = ERL_REF_NUMBER(space_refp);
+    HASH_FIND_INT(erlmunk_spaces, &space_id, s);
+
+    int body_id = ERL_INT_VALUE(idp);
+    erlmunk_body *b = NULL;
+    HASH_FIND_INT(s->bodies, &body_id, b);
+
+    cpVect position = cpBodyGetPosition(b->body);
+    float angle = cpBodyGetAngle(b->body);
+
+    ETERM **position_tuple_array = (ETERM **) malloc(sizeof(ETERM*) * 2);
+    position_tuple_array[0] = erl_mk_float(position.x);
+    position_tuple_array[1] = erl_mk_float(position.y);
+    ETERM *position_tuple = erl_mk_tuple(position_tuple_array, 2);
+    free(position_tuple_array);
+
+    ETERM *atom_ok = erl_mk_atom("ok");
+    ETERM **get_position_array = (ETERM **) malloc(sizeof(ETERM*) * 3);
+    get_position_array[0] = atom_ok;
+    get_position_array[1] = position_tuple;
+    get_position_array[2] = erl_mk_float(angle);
+    ETERM *get_position_tuple = erl_mk_tuple(get_position_array, 3);
+    free(get_position_array);
+
+    ETERM *reply_tuple = erl_mk_reply(fromp, get_position_tuple);
+    ETERM *gen_cast_tuple = erl_mk_gen_cast(reply_tuple);
+
+    // DEBUGF(("body_get_position(body: %d, x: %f, y: %f, angle: %f) has succeeded",
+    //     body_id, position.x, position.y, angle));
+
+    return gen_cast_tuple;
 }
 
 ETERM *body_set_position(ETERM *fromp, ETERM *argp) {
@@ -560,10 +651,18 @@ ETERM *space_subscribe_box(ETERM *fromp, ETERM *argp) {
 
 void handle_shape(cpShape *shape, void *data) {
 
-    element **l = (element **) data;
     cpBody *body = cpShapeGetBody(shape);
+
+    // get the static body that comes with the space
+    cpSpace *space = cpBodyGetSpace(body);
+    cpBody *static_body = cpSpaceGetStaticBody(space);
+    // ignore the static body
+    if (static_body == body)
+        return;
+
     element *el = (element *) malloc(sizeof(element));
     el->body = body;
+    element **l = (element **) data;
     LL_APPEND(*l, el);
 }
 

@@ -2,6 +2,8 @@
 
 #define RADIAN 0.01745329251994
 
+#define BOUNDARY_BODY_ID -1
+
 /* uncomment the next line to enable debug print */
 #define DEBUG
 
