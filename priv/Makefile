@@ -6,7 +6,7 @@
 ERL_TOP=${_KERL_ACTIVE_DIR}
 
 # define the C compiler to use
-CC = clang
+CC = gcc
 
 # define any compile-time flags
 CFLAGS = -c -Wall -g
