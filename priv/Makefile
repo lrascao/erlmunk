@@ -3,6 +3,8 @@
 # 'make clean'  removes all .o and executable files
 #
 
+ERL_TOP=${_KERL_ACTIVE_DIR}
+
 # define the C compiler to use
 CC = clang
 
