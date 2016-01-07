@@ -179,6 +179,8 @@ ETERM *space_remove_body(ETERM *fromp, ETERM *argp) {
     if (b == NULL)
         return NULL;
 
+    // DEBUGF(("removing body #%d\n", body_id));
+
     // remove the user data associated with the body
     erlmunk_body_data *data = cpBodyGetUserData(b->body);
     if (data->term != NULL)
@@ -344,6 +346,8 @@ ETERM *body_get_position(ETERM *fromp, ETERM *argp) {
     int body_id = ERL_INT_VALUE(idp);
     erlmunk_body *b = NULL;
     HASH_FIND_INT(s->bodies, &body_id, b);
+    if (b == NULL)
+        return NULL;
 
     cpVect position = cpBodyGetPosition(b->body);
     float angle = cpBodyGetAngle(b->body);
@@ -387,6 +391,8 @@ ETERM *body_set_position(ETERM *fromp, ETERM *argp) {
     int body_id = ERL_INT_VALUE(idp);
     erlmunk_body *b = NULL;
     HASH_FIND_INT(s->bodies, &body_id, b);
+    if (b == NULL)
+        return NULL;
 
     cpBodySetPosition(b->body, cpv(ERL_FLOAT_VALUE(xp),
                                    ERL_FLOAT_VALUE(yp)));
@@ -410,6 +416,8 @@ ETERM *body_update_position(ETERM *fromp, ETERM *argp) {
     int body_id = ERL_INT_VALUE(idp);
     erlmunk_body *b = NULL;
     HASH_FIND_INT(s->bodies, &body_id, b);
+    if (b == NULL)
+        return NULL;
 
     cpVect position = cpBodyGetPosition(b->body);
     float angle = deg_to_rad(cpBodyGetAngle(b->body));
@@ -437,6 +445,8 @@ ETERM *body_set_angle(ETERM *fromp, ETERM *argp) {
     int body_id = ERL_INT_VALUE(idp);
     erlmunk_body *b;
     HASH_FIND_INT(s->bodies, &body_id, b);
+    if (b == NULL)
+        return NULL;
 
     cpBodySetAngle(b->body, ERL_FLOAT_VALUE(anglep));
 
@@ -458,6 +468,8 @@ ETERM *body_set_angular_velocity(ETERM *fromp, ETERM *argp) {
     int body_id = ERL_INT_VALUE(idp);
     erlmunk_body *b;
     HASH_FIND_INT(s->bodies, &body_id, b);
+    if (b == NULL)
+        return NULL;
 
     cpBodySetAngularVelocity(b->body, ERL_FLOAT_VALUE(angular_vel));
 
@@ -481,6 +493,8 @@ ETERM *body_set_collision_circle(ETERM *fromp, ETERM *argp) {
     int body_id = ERL_INT_VALUE(idp);
     erlmunk_body *b;
     HASH_FIND_INT(s->bodies, &body_id, b);
+    if (b == NULL)
+        return NULL;
 
     cpShape *shape = cpSpaceAddShape(s->space,
                                      cpCircleShapeNew(b->body, ERL_FLOAT_VALUE(radiusp),
@@ -504,6 +518,8 @@ ETERM *body_get_user_data(ETERM *fromp, ETERM *argp) {
     int body_id = ERL_INT_VALUE(idp);
     erlmunk_body *b;
     HASH_FIND_INT(s->bodies, &body_id, b);
+    if (b == NULL)
+        return NULL;
 
     erlmunk_body_data *data = cpBodyGetUserData(b->body);
     ETERM *datap = erl_copy_term(data->term);
@@ -513,6 +529,7 @@ ETERM *body_get_user_data(ETERM *fromp, ETERM *argp) {
     body_get_data_array[0] = atom_ok;
     body_get_data_array[1] = datap;
     ETERM *body_get_data_tuple = erl_mk_tuple(body_get_data_array, 2);
+    free(body_get_data_array);
 
     ETERM *reply_tuple = erl_mk_reply(fromp, body_get_data_tuple);
     ETERM *gen_cast_tuple = erl_mk_gen_cast(reply_tuple);
@@ -534,6 +551,8 @@ ETERM *body_set_user_data(ETERM *fromp, ETERM *argp) {
     int body_id = ERL_INT_VALUE(idp);
     erlmunk_body *b;
     HASH_FIND_INT(s->bodies, &body_id, b);
+    if (b == NULL)
+        return NULL;
 
     erlmunk_body_data *data = cpBodyGetUserData(b->body);
     data->term = erl_copy_term(datap);
@@ -559,6 +578,8 @@ ETERM *body_update_user_data(ETERM *fromp, ETERM *argp) {
     int body_id = ERL_INT_VALUE(idp);
     erlmunk_body *b;
     HASH_FIND_INT(s->bodies, &body_id, b);
+    if (b == NULL)
+        return NULL;
 
     erlmunk_body_data *data = cpBodyGetUserData(b->body);
 
@@ -574,6 +595,7 @@ ETERM *body_update_user_data(ETERM *fromp, ETERM *argp) {
     body_update_data_array[0] = atom_ok;
     body_update_data_array[1] = new_valuep;
     ETERM *body_update_data_tuple = erl_mk_tuple(body_update_data_array, 2);
+    free(body_update_data_array);
 
     ETERM *reply_tuple = erl_mk_reply(fromp, body_update_data_tuple);
     ETERM *gen_cast_tuple = erl_mk_gen_cast(reply_tuple);
@@ -595,6 +617,8 @@ ETERM *body_apply_impulse(ETERM *fromp, ETERM *argp) {
     int body_id = ERL_INT_VALUE(idp);
     erlmunk_body *b;
     HASH_FIND_INT(s->bodies, &body_id, b);
+    if (b == NULL)
+        return NULL;
 
     // apply the impulse at the center of the body and along it's current angle
     float angle = deg_to_rad(cpBodyGetAngle(b->body));
@@ -619,6 +643,8 @@ ETERM *body_copy(ETERM *fromp, ETERM *argp) {
     int body_id = ERL_INT_VALUE(idp);
     erlmunk_body *b;
     HASH_FIND_INT(s->bodies, &body_id, b);
+    if (b == NULL)
+        return NULL;
 
     int from_body_id = ERL_INT_VALUE(from_idp);
     erlmunk_body *from_b;

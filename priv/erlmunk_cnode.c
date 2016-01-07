@@ -207,10 +207,12 @@ void handle_message(erlmunk_client *client) {
         ETERM *from = erl_element(2, emsg.msg);
         ETERM *message = erl_element(3, emsg.msg);
         ETERM *resp = handle_call(from, message);
-        if (erl_send(client->fd, emsg.from, resp) != 1) {
-            DEBUGF(("failed to send reply to client %d\n", client->fd));
+        if (resp != NULL) {
+            if (erl_send(client->fd, emsg.from, resp) != 1) {
+                DEBUGF(("failed to send reply to client %d\n", client->fd));
+            }
+            erl_free_compound(resp);
         }
-        erl_free_compound(resp);
     }
 
     erl_free_compound(emsg.from);
