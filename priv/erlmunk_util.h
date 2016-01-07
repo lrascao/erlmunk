@@ -35,11 +35,15 @@ void erl_free_gen_cast(ETERM *gen_cast);
 
 ETERM *erl_mk_node_ref();
 
+ETERM *erl_mk_undefined();
+
 ETERM *erl_mk_reply(ETERM *fromp, ETERM *reply);
 
 ETERM *erl_mk_int_prop_value(int id, ETERM *tuple);
 
 ETERM *erl_lists_keyreplace(ETERM *list, ETERM *key, ETERM *value);
+
+ETERM *erl_proplists_get_value(ETERM *key, ETERM *proplist);
 
 float deg_to_rad(float d);
 

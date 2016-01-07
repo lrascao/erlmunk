@@ -491,7 +491,7 @@ ETERM *body_set_collision_circle(ETERM *fromp, ETERM *argp) {
     return NULL;
 }
 
-ETERM *body_get_data(ETERM *fromp, ETERM *argp) {
+ETERM *body_get_user_data(ETERM *fromp, ETERM *argp) {
 
     // get the args
     ETERM *space_refp = erl_element(1, argp);
@@ -520,7 +520,7 @@ ETERM *body_get_data(ETERM *fromp, ETERM *argp) {
     return gen_cast_tuple;
 }
 
-ETERM *body_set_data(ETERM *fromp, ETERM *argp) {
+ETERM *body_set_user_data(ETERM *fromp, ETERM *argp) {
 
     // get the args
     ETERM *space_refp = erl_element(1, argp);
@@ -564,10 +564,21 @@ ETERM *body_update_user_data(ETERM *fromp, ETERM *argp) {
 
     ETERM *new_data_term = erl_lists_keyreplace(data->term, keyp, valuep);
     erl_free_compound(data->term);
-
     data->term = new_data_term;
 
-    return NULL;
+    ETERM *new_valuep = erl_proplists_get_value(keyp, new_data_term);
+
+    // obtain updated key value and return that
+    ETERM *atom_ok = erl_mk_atom("ok");
+    ETERM **body_update_data_array = (ETERM **) malloc(sizeof(ETERM*) * 2);
+    body_update_data_array[0] = atom_ok;
+    body_update_data_array[1] = new_valuep;
+    ETERM *body_update_data_tuple = erl_mk_tuple(body_update_data_array, 2);
+
+    ETERM *reply_tuple = erl_mk_reply(fromp, body_update_data_tuple);
+    ETERM *gen_cast_tuple = erl_mk_gen_cast(reply_tuple);
+
+    return gen_cast_tuple;
 }
 
 ETERM *body_apply_impulse(ETERM *fromp, ETERM *argp) {
@@ -690,7 +701,7 @@ void handle_subscriber(erlmunk_subscriber *subscriber, element *bodies) {
         t_array[1] = erl_mk_float(vect.y);
         t_array[2] = erl_mk_float(angle);
         if (data->term == NULL)
-            t_array[3] = erl_mk_atom("undefined");
+            t_array[3] = erl_mk_undefined();
         else
             t_array[3] = erl_copy_term(data->term);
         ETERM *tuple = erl_mk_tuple(t_array, 4);

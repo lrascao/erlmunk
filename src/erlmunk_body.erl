@@ -7,8 +7,8 @@
          update_position/4,
          set_angle/4,
          set_angular_velocity/4,
-         get_data/3,
-         set_data/4,
+         get_user_data/3,
+         set_user_data/4,
          update_user_data/5,
          apply_impulse/4,
          copy/4,
@@ -44,16 +44,18 @@ set_angular_velocity(Pid, SpaceRef, BodyId, AngularVelocity)
              is_float(AngularVelocity) ->
     gen_server:cast(Pid, {body_set_angular_velocity, {SpaceRef, BodyId, AngularVelocity}}).
 
-get_data(Pid, SpaceRef, BodyId) ->
-    gen_server:cast(Pid, {body_get_data, {SpaceRef, BodyId}}).
+-spec get_user_data(Pid :: pid(), SpaceRef :: reference(), BodyId :: non_neg_integer()) ->
+        {ok, Data :: proplists:proplist()}.
+get_user_data(Pid, SpaceRef, BodyId) ->
+    gen_server:call(Pid, {body_get_user_data, {SpaceRef, BodyId}}).
 
-set_data(Pid, SpaceRef, BodyId, Data)
+set_user_data(Pid, SpaceRef, BodyId, Data)
         when is_integer(BodyId) ->
-    gen_server:cast(Pid, {body_set_data, {SpaceRef, BodyId, Data}}).
+    gen_server:cast(Pid, {body_set_user_data, {SpaceRef, BodyId, Data}}).
 
 update_user_data(Pid, SpaceRef, BodyId, Key, Value)
         when is_integer(BodyId) ->
-    gen_server:cast(Pid, {body_update_user_data, {SpaceRef, BodyId, Key, Value}}).
+    gen_server:call(Pid, {body_update_user_data, {SpaceRef, BodyId, Key, Value}}).
 
 apply_impulse(Pid, SpaceRef, BodyId, Impulse)
         when is_integer(BodyId),
