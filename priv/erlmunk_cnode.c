@@ -44,14 +44,16 @@ static void init_commands() {
         { .name = "space_add_body", .command = space_add_body },
         { .name = "space_remove_body", .command = space_remove_body },
         { .name = "space_subscribe_collision", .command = space_subscribe_collision },
+        { .name = "space_add_boundaries", .command = space_add_boundaries },
         { .name = "body_activate", .command = body_activate },
+        { .name = "body_get_position", .command = body_get_position },
         { .name = "body_set_position", .command = body_set_position },
         { .name = "body_update_position", .command = body_update_position },
         { .name = "body_set_angle", .command = body_set_angle },
         { .name = "body_set_angle", .command = body_set_angle },
         { .name = "body_set_angular_velocity", .command = body_set_angular_velocity },
-        { .name = "body_get_data", .command = body_set_data },
-        { .name = "body_set_data", .command = body_set_data },
+        { .name = "body_get_user_data", .command = body_get_user_data },
+        { .name = "body_set_user_data", .command = body_set_user_data },
         { .name = "body_update_user_data", .command = body_update_user_data },
         { .name = "body_apply_impulse", .command = body_apply_impulse },
         { .name = "body_copy", .command = body_copy },
@@ -205,10 +207,12 @@ void handle_message(erlmunk_client *client) {
         ETERM *from = erl_element(2, emsg.msg);
         ETERM *message = erl_element(3, emsg.msg);
         ETERM *resp = handle_call(from, message);
-        if (erl_send(client->fd, emsg.from, resp) != 1) {
-            DEBUGF(("failed to send reply to client %d\n", client->fd));
+        if (resp != NULL) {
+            if (erl_send(client->fd, emsg.from, resp) != 1) {
+                DEBUGF(("failed to send reply to client %d\n", client->fd));
+            }
+            erl_free_compound(resp);
         }
-        erl_free_compound(resp);
     }
 
     erl_free_compound(emsg.from);
@@ -293,6 +297,7 @@ int main(int argc, char **argv) {
 
     init_commands();
 
+    int diff = 0;
     while (1) {
         int timeout = 1000 / FRAMES_PER_SECOND;
         int nfds;
@@ -306,21 +311,18 @@ int main(int argc, char **argv) {
 
         if (n_set_fds != 0) {
             handle_clients(listen_fd, fds, nfds, n_set_fds, &ec);
-
-            // and the time when we finished handling the client requests
-            ftime(&end);
-            // diff is in millis
-            int diff = (int) (1000.0 * (end.time - start.time) + (end.millitm - start.millitm));
-            // we're interested in constant time steps, so wait out the remainder of the delta t
-            // if any exists
-            if (diff < timeout) {
-                // DEBUGF(("sleeping the remainder of the cycle: %d (%d - %d)",
-                //     timeout - diff, timeout, diff));
-                poll(NULL, 0, timeout - diff);
-            }
         }
 
-        spacesStep(1.0 / FRAMES_PER_SECOND);
+        // and the time when we finished handling the client requests
+        ftime(&end);
+        // diff is in millis
+        diff += (int) (1000.0 * (end.time - start.time) + (end.millitm - start.millitm));
+
+        // is it already time to step the spaces?
+        if (diff >= timeout) {
+            spacesStep(1.0 / FRAMES_PER_SECOND);
+            diff = 0;
+        }
     }
     return 0;
 }

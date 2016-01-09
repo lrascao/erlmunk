@@ -88,6 +88,10 @@ ETERM *erl_mk_node_ref() {
     return erl_mk_ref(node_name, ref_count++, creation);
 }
 
+ETERM *erl_mk_undefined() {
+    return erl_mk_atom("undefined");
+}
+
 ETERM *erl_mk_reply(ETERM *fromp, ETERM *reply) {
 
     ETERM *atom_reply = erl_mk_atom("reply");
@@ -147,8 +151,27 @@ ETERM *erl_lists_keyreplace(ETERM *list, ETERM *key, ETERM *value) {
         list = erl_tl(list);
     } while (i < length);
 
+    ETERM *l = erl_mk_list(new_list_array, length);
     free(new_list_array);
-    return erl_mk_list(new_list_array, length);
+    return l;
+}
+
+ETERM *erl_proplists_get_value(ETERM *key, ETERM *proplist) {
+
+    int length = erl_length(proplist);
+
+    for(int i = 0; i < length; i++) {
+        ETERM *hd = erl_hd(proplist);
+        ETERM *k = erl_element(1, hd);
+
+        if (strcmp(ERL_ATOM_PTR(k), ERL_ATOM_PTR(key)) == 0) {
+            return erl_copy_term(erl_element(2, hd));
+        }
+
+        proplist = erl_tl(proplist);
+    }
+
+    return erl_mk_undefined();
 }
 
 float deg_to_rad(float d) {
