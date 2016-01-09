@@ -1,0 +1,10 @@
+sudo: false
+language: erlang
+otp_release:
+  - 17.4
+  - 18.2
+before_script:
+  - hostname -f
+  - cc -v
+  - ld -v
+script: "make travis"
