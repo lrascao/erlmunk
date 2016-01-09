@@ -38,7 +38,7 @@ all: deps compile
 
 deps:
 	- $(REBAR) -C rebar.config.lock get-deps
-	pushd deps/chipmunk2d; cmake .; make; popd
+	pushd deps/chipmunk2d; cmake -DBUILD_DEMOS=OFF -DBUILD_STATIC=ON -DBUILD_SHARED=OFF .; make; popd
 	- $(REBAR) compile
 
 compile:
@@ -71,7 +71,6 @@ clean:
 	- $(REBAR) skip_deps=true clean
 
 distclean: clean
-	- rm -rf $(DEPS_PLT)
-	- rm -rvf deps
+	- rm -rf $(DEPS_PLT) deps .rebar ebin
 
 rebuild: distclean deps compile dialyze

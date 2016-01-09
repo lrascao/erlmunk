@@ -18,8 +18,8 @@
               {git, "git://github.com/devinus/poolboy.git",
                    "3bb48a89"}},
        {chipmunk2d,".*",
-              {git,"git://github.com/slembcke/Chipmunk2D.git",
-                   "e98a7ced"}, [raw]},
+              {git,"git://github.com/lrascao/Chipmunk2D.git",
+                   "d2883f3e"}, [raw]},
       {uthash, ".*",
               {git, "git://github.com/troydhanson/uthash.git",
                    "bac80b26"}, [raw]}
