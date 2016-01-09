@@ -11,18 +11,20 @@ CC = gcc
 # define any compile-time flags
 CFLAGS = -c -Wall -g -std=c99
 
+ERL_INTERFACE_VERSION=3.7.20
+
 # define any directories containing header files other than /usr/include
 #
 # the two include paths are for you compile the project on it's own or as a dep
 UTHASH_INCLUDES=-I../../uthash/src -I../deps/uthash/src
 CHIPMUNK_INCLUDES=-I../../chipmunk2d/include -I../deps/chipmunk2d/include
-INCLUDES = -I${ERL_TOP}/usr/include -I${ERL_TOP}/lib/erl_interface-3.7.20/include $(UTHASH_INCLUDES) $(CHIPMUNK_INCLUDES)
+INCLUDES = -I${ERL_TOP}/usr/include -I${ERL_TOP}/lib/erl_interface-$(ERL_INTERFACE_VERSION)/include $(UTHASH_INCLUDES) $(CHIPMUNK_INCLUDES)
 
 # define library paths in addition to /usr/lib
 #   if I wanted to include libraries not in /usr/lib I'd specify
 #   their path using -Lpath, something like:
 CHIPMUNK_LIBRARY_PATH=-L../deps/chipmunk2d/src -L../../chipmunk2d/src
-LFLAGS = -L${ERL_TOP}/lib/erl_interface-3.7.20/lib -L${ERL_TOP}/usr/lib $(CHIPMUNK_LIBRARY_PATH)
+LFLAGS = -L${ERL_TOP}/lib/erl_interface-$(ERL_INTERFACE_VERSION)/lib -L${ERL_TOP}/usr/lib $(CHIPMUNK_LIBRARY_PATH)
 
 # define any libraries to link into executable:
 #   if I want to link in libraries (libx.so or libx.a) I use the -llibname

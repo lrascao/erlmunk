@@ -32,13 +32,15 @@ endif
 
 all: deps compile
 
+travis: all
+
 # =============================================================================
 # Rules to build the system
 # =============================================================================
 
 deps:
 	- $(REBAR) -C rebar.config.lock get-deps
-	pushd deps/chipmunk2d; cmake -DBUILD_DEMOS=OFF -DBUILD_STATIC=ON -DBUILD_SHARED=OFF .; make; popd
+	cd deps/chipmunk2d; cmake -DBUILD_DEMOS=OFF -DBUILD_STATIC=ON -DBUILD_SHARED=OFF .; make; cd ..
 	- $(REBAR) compile
 
 compile:
