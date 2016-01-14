@@ -120,6 +120,10 @@ ETERM *update_prop_value(ETERM *old_value, ETERM *new_value) {
         int delta = ERL_INT_VALUE(new_value);
         return erl_mk_int(ERL_INT_VALUE(old_value) + delta);
     }
+    if (ERL_IS_FLOAT(old_value)) {
+        int delta = ERL_FLOAT_VALUE(new_value);
+        return erl_mk_float(ERL_FLOAT_VALUE(old_value) + delta);
+    }
 
     return erl_copy_term(new_value);
 }
